@@ -2,6 +2,12 @@ package main
 
 import "fmt"
 import "strings"
+import "os"
+
+func err(e string) {
+	fmt.Println(e)
+	os.Exit(1)
+}
 
 type ast struct { //abstract syntax tree
 	desc   string
@@ -12,7 +18,7 @@ func removeComments(code string) string {
 	//do things
 	return code
 }
-func generateSyntaxTrees(code string) []*ast {
+func generateSyntaxTrees(code string) []*ast { //TODO: error handling?
 	s := strings.Split(code, "\n")
 	retVal := []*ast{}
 	var currentAst *ast
@@ -32,6 +38,7 @@ func generateSyntaxTrees(code string) []*ast {
 		}
 		if amtOfTabs == 0 && appendTo != nil {
 			retVal = append(retVal, appendTo)
+			appendTo = nil
 		}
 
 		firstSpace := strings.Index(line, " ")
@@ -50,16 +57,16 @@ func generateSyntaxTrees(code string) []*ast {
 			thisAst.desc = firstWord
 			thisAst.leaves = []*ast{new(ast)}
 			if afterwards == "" {
-				thisAst.leaves[0].desc = "EVAL: true"
+				thisAst.leaves[0].desc = "E true"
 			} else {
-				thisAst.leaves[0].desc = "EVAL: " + afterwards
+				thisAst.leaves[0].desc = "E " + afterwards
 			}
 		} else if afterwards == "" {
-			thisAst.desc = "EVAL: " + firstWord
+			thisAst.desc = "E " + firstWord
 		} else {
 			thisAst.desc = firstWord
 			thisAst.leaves = []*ast{new(ast)}
-			thisAst.leaves[0].desc = "EVAL: " + afterwards
+			thisAst.leaves[0].desc = "EV " + afterwards
 		}
 		fmt.Println(thisAst)
 		if appendTo == nil {
@@ -73,6 +80,48 @@ func generateSyntaxTrees(code string) []*ast {
 	}
 	return retVal
 }
+
+type varType struct {
+	desc string //make this more elaborate later
+}
+
+var tempAstVals map[*ast]interface{}
+var tempAstTypes map[*ast]varType
+
+func evalSyntaxTree(a *ast, parents []*ast) {
+	fmt.Println(a.desc)
+	if len(a.desc) > 2 && a.desc[:2] == "E " { //e for eval
+		word := a.desc[2:]
+		var evalVal interface{}
+		var evalType varType
+		if word == "true" {
+			evalVal = true
+			evalType = varType{"bool"}
+		} else if word == "false" {
+			evalVal = false
+			evalType = varType{"bool"}
+		} else if word == "nil" {
+			evalVal = nil
+			evalType = varType{"nil"}
+		} else {
+			//err("UNDEFINED: "+word)
+		}
+		tempAstVals[a] = evalVal
+		tempAstTypes[a] = evalType
+		a.desc="D" //d for done
+	}
+	for _, a2 := range a.leaves {
+		evalSyntaxTree(a2, append(parents,a))
+	}
+}
 func main() {
-	fmt.Println(generateSyntaxTrees("loop\n\tloop a\n\t\ta\na"))
+	code := "loop\n\tloop a\n\t\tb\nc"
+	code = removeComments(code)
+	parent := &ast{"parent", generateSyntaxTrees(code)}
+	tempAstVals = make(map[*ast]interface{})
+	tempAstTypes = make(map[*ast]varType)
+	evalSyntaxTree(parent, []*ast{})
+	fmt.Println("---------------------------")
+	evalSyntaxTree(parent, []*ast{})
+	fmt.Println(parent.leaves)
 }

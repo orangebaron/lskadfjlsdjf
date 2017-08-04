@@ -61,12 +61,10 @@ func generateSyntaxTrees(code string) []*ast { //TODO: error handling?
 			} else {
 				thisAst.leaves[0].desc = "E " + afterwards
 			}
-		} else if afterwards == "" {
-			thisAst.desc = "E " + firstWord
+		} else if firstWord == "const" {
+			thisAst.desc = line
 		} else {
-			thisAst.desc = firstWord
-			thisAst.leaves = []*ast{new(ast)}
-			thisAst.leaves[0].desc = "EV " + afterwards
+			thisAst.desc = "E " + line
 		}
 		fmt.Println(thisAst)
 		if appendTo == nil {
@@ -84,44 +82,64 @@ func generateSyntaxTrees(code string) []*ast { //TODO: error handling?
 type varType struct {
 	desc string //make this more elaborate later
 }
+type variable struct {
+	vType varType
+	vValue interface{}
+}
 
-var tempAstVals map[*ast]interface{}
-var tempAstTypes map[*ast]varType
+var constVars map[string]*variable
+var tempAstVars map[*ast]*variable
+var astsFinished map[*ast]bool
 
 func evalSyntaxTree(a *ast, parents []*ast) {
 	fmt.Println(a.desc)
-	if len(a.desc) > 2 && a.desc[:2] == "E " { //e for eval
-		word := a.desc[2:]
-		var evalVal interface{}
-		var evalType varType
-		if word == "true" {
-			evalVal = true
-			evalType = varType{"bool"}
-		} else if word == "false" {
-			evalVal = false
-			evalType = varType{"bool"}
-		} else if word == "nil" {
-			evalVal = nil
-			evalType = varType{"nil"}
-		} else {
-			//err("UNDEFINED: "+word)
+	if !astsFinished[a] {
+		evalBranches := true
+		done := true
+		if len(a.desc) > 2 && a.desc[:2] == "E " { //e for eval
+			word := a.desc[2:]
+			var evalVar variable
+			if word == "true" {
+				evalVar = variable{varType{"bool"},true}
+			} else if word == "false" {
+				evalVar = variable{varType{"bool"},false}
+			} else if word == "nil" {
+				evalVar = variable{varType{"nil"},nil}
+			} else {
+				//err("UNDEFINED: "+word)
+			}
+			tempAstVars[a] = &evalVar
+		} else if len(a.desc) > 6 && a.desc[:6] == "const " {
+			word := a.desc[6:]
+			equLoc := strings.Index(word,"=") //TODO: handle errors related to the = sign
+			if len(a.leaves) == 0 {
+				a.leaves = []*ast{&ast{"E "+word[equLoc+2:],[]*ast{}}}
+			}
+			evalSyntaxTree(a.leaves[0],append(parents, a))
+			if !astsFinished[a.leaves[0]] {
+				done = false
+			} else {
+				constVars[word[:equLoc-1]] = tempAstVars[a.leaves[0]]
+			}
+			evalBranches = false
 		}
-		tempAstVals[a] = evalVal
-		tempAstTypes[a] = evalType
-		a.desc="D" //d for done
-	}
-	for _, a2 := range a.leaves {
-		evalSyntaxTree(a2, append(parents,a))
+		if evalBranches {
+			for _, a2 := range a.leaves {
+				evalSyntaxTree(a2, append(parents, a))
+				done = done && astsFinished[a2]
+			}
+		}
+		astsFinished[a] = done
 	}
 }
 func main() {
-	code := "loop\n\tloop a\n\t\tb\nc"
+	code := "const a = true"
 	code = removeComments(code)
 	parent := &ast{"parent", generateSyntaxTrees(code)}
-	tempAstVals = make(map[*ast]interface{})
-	tempAstTypes = make(map[*ast]varType)
+	tempAstVars = make(map[*ast]*variable)
+	constVars = make(map[string]*variable)
+	astsFinished = make(map[*ast]bool)
 	evalSyntaxTree(parent, []*ast{})
-	fmt.Println("---------------------------")
-	evalSyntaxTree(parent, []*ast{})
+	fmt.Println(constVars["a"])
 	fmt.Println(parent.leaves)
 }
